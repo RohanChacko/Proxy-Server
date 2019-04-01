@@ -33,7 +33,6 @@ void * client_thread(void *arg)
                                                       &opt, sizeof(opt))) // SOL_SOCKET is the socket layer itself
         {
             perror("setsockopt");
-            exit(EXIT_FAILURE);
         }
 
         memset(&serv_addr, '0', sizeof(serv_addr)); // to make sure the struct is empty. Essentially sets sin_zero as 0
@@ -53,7 +52,7 @@ void * client_thread(void *arg)
         client_addr.sin_family = AF_INET;
         client_addr.sin_port = htons(client_port);
 
-        // Forcefully attaching socket to the port 20100
+        // Forcefully attaching socket to its respective port
         if (bind(sock, (struct sockaddr *)&client_addr,
                  sizeof(client_addr))<0)
         {
