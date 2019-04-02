@@ -2,10 +2,14 @@
 Multi-threaded HTTP Proxy Server using sockets
 
 
-# Compile
-~~`gcc -pthread -o proxy proxy_server.c`~~  
-~~`gcc -pthread -o client client.c`~~
-
-
 # Run
-python3 server.py
+`python3 server.py`  
+`python3 proxy.py`  
+`python3 dummy_client.py`
+
+# Issues
+* Need to fix small things in caching and test it
+* Multiple clients are not able to stay connected simultaneously
+* Need to do basic authentication
+* CIDR format
+* Binary files cannot be sent in GET Request. Need to do corresponding checking
