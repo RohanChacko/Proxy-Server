@@ -71,21 +71,6 @@ class ProxyServer:
         filename = [i.decode() for i in request_text.split(b'\r\n')
                     ][0].split('?')[0].split('/')[-1]
 
-        url = headers['Host'] + resource.decode()
-        if url in self.accesses:
-            self.accesses[url].append(time())
-        else:
-            self.accesses[url] = [time()]
-        
-        to_cache = False
-        curr_time = time()
-        if len(self.accesses[url]) > 3:
-            for t in self.accesses[url]:
-                count = 0
-                if t > curr_time - 300:
-                    count += 1
-                to_cache = (count > 3)
-
         auth_obtained = True
         for b in self.blacklist:
             if headers['Host'] in b:
@@ -106,9 +91,45 @@ class ProxyServer:
                     print("ERROR: BLACKLISTED SITE")
                     ####################### CLOSE CONNECTION #######################
                     conn.send(str.encode("HTTP/1.1 407 Proxy Authentication Required\nProxy-Authenticate: Basic realm=\"Access blacklisted site\"\n\n"))
-                    conn.close()
+                    request_text = conn.recv(1024)
+                    first_line = request_text.split(b'\r\n')[0]
+                    resource = first_line.split(b' ')[1]
+                    headers_list = [i.decode() for i in request_text.split(
+                        b'\r\n') if re.match('[a-zA-Z]+: ', i.decode())]
+                    print(headers_list)
+                    headers = {h.split(': ')[0]: h.split(': ')[1] for h in headers_list}
+                    print(headers)
+                    filename = [i.decode() for i in request_text.split(b'\r\n')
+                                ][0].split('?')[0].split('/')[-1]
+                    if 'Authorization' in headers:
+                        auth_type, pass_string = headers['Authorization'].split()
+                        for user in self.passwd:
+                            print(base64.b64encode(str.encode(user+':'+self.passwd[user])))
+                            if base64.b64encode(str.encode(user+':'+self.passwd[user])) == str.encode(pass_string):
+                                auth_obtained = True
+                                print("USER AUTHENTICATED")
+                        if not auth_obtained:
+                            conn.send(str.encode("HTTP/1.1 403 Forbidden\n\n"))
+                            conn.close()
+                            print("AUTHENTICATION FAILED")
+                            return
             else:
                 pass
+        
+        url = headers['Host'] + resource.decode()
+        if url in self.accesses:
+            self.accesses[url].append(time())
+        else:
+            self.accesses[url] = [time()]
+        
+        to_cache = False
+        curr_time = time()
+        if len(self.accesses[url]) > 3:
+            for t in self.accesses[url]:
+                count = 0
+                if t > curr_time - 300:
+                    count += 1
+                to_cache = (count > 3)
 
         if filename in self.cache_header_dict:
             print("####################### USING CACHE #######################")
