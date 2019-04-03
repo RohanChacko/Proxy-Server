@@ -71,42 +71,55 @@ class ProxyServer:
 
         if filename in self.cache_header_dict:
             print("##### USING CACHE #####")
-            print(self.cache_header_dict[filename])
-            print(self.cache_file_dict[filename])
+            # print(self.cache_header_dict[filename])
+            # print(self.cache_file_dict[filename])
 
-            if 'must-revalidate' in self.cache_header_dict[filename]:
-                # date = cache_header['date']                           # NEED TO CORRECT THIS
+            if 'must-revalidate' in self.cache_header_dict[filename]['Cache-control']:
+
+                date = self.cache_header_dict[filename]['Date']
                 c = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 c.connect((headers['Host'].split(':')[0],
                            int(headers['Host'].split(':')[1])))
 
-                req = request.text.decode()[:-2]
-                req += "If-Modified-Since: " + date + "\r\n"
+                req = request_text.decode()[:-2]
+                req += "If-Modified-Since: " + date + "\r\n\r\n"
                 req = req.encode()
 
                 c.send(req)
                 temp_string = c.recv(4096)
-                response_string = ""
+                response_file_string = ""
+                response_header_string = temp_string.decode()
 
+                temp_string = c.recv(4096)
                 while temp_string:
-                    response_string += temp_string.decode()
+                    response_file_string += temp_string.decode()
                     temp_string = c.recv(4096)
 
                 c.close()
 
-                print("RESPONSE => ", response_string)
+                print("RESPONSE HEADER => ", response_header_string)
+                print("RESPONSE => ", response_file_string)
 
-                if '200' in response_string:
-                    self.cache_header_dict[filename] = response_string
+                if '530' in response_header_string:
                     self.cache_file_dict[filename] = base64.b64encode(
-                        response_string)
-                else:
-                    print("Error during file transmission")
+                        response_file_string.encode()).decode()
 
-                c.close()
+                    self.cache_header_dict[filename] = {}
+
+                    self.cache_header_dict[filename]['Response'] = response_header_string.split('\r\n')[
+                        0]
+                    self.cache_header_dict[filename]['Server'] = response_header_string.split('\r\n')[
+                        1].split(':')[1].lstrip()
+                    self.cache_header_dict[filename]['Date'] = response_header_string.split('\r\n')[
+                        2].split(':', 1)[1].lstrip()
+                    self.cache_header_dict[filename]['Cache-control'] = response_header_string.split('\r\n')[
+                        3].split(':')[1].lstrip()
+
+                elif '304' in response_header_string:
+                    print("CACHE CAN BE USED. NO MODIFICATION AFTER REVALIDATION")
 
             else:
-                pass
+                print("USE CACHE. NO REVALIDATION")
 
         else:
             c = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -120,10 +133,13 @@ class ProxyServer:
             c.send(request_text)
 
             temp_string = c.recv(4096)
-            response_string = ""
+            response_file_string = ""
+            response_header_string = temp_string.decode()
+            temp_string = ""
 
+            temp_string = c.recv(4096)
             while temp_string:
-                response_string += temp_string.decode()
+                response_file_string += temp_string.decode()
                 temp_string = c.recv(4096)
 
             c.close()
@@ -131,9 +147,9 @@ class ProxyServer:
             # RESPONSE STRING CONTAINS THE RESPONSE CODE (200/404/..)
             # AND THE REQUESTED FILE CONTENTS
 
-            print("RESPONSE => ", response_string)
+            print("RESPONSE => ", response_file_string)
 
-            if '200' in response_string:
+            if '200' in response_header_string:
 
                 if(len(self.cache_filename) > 3):
 
@@ -144,8 +160,17 @@ class ProxyServer:
 
                 self.cache_filename.append(filename)
                 self.cache_file_dict[filename] = base64.b64encode(
-                    response_string.encode()).decode()
-                self.cache_header_dict[filename] = response_string
+                    response_file_string.encode()).decode()
+                self.cache_header_dict[filename] = {}
+
+                self.cache_header_dict[filename]['Response'] = response_header_string.split('\r\n')[
+                    0]
+                self.cache_header_dict[filename]['Server'] = response_header_string.split('\r\n')[
+                    1].split(':')[1].lstrip()
+                self.cache_header_dict[filename]['Date'] = response_header_string.split('\r\n')[
+                    2].split(':', 1)[1].lstrip()
+                self.cache_header_dict[filename]['Cache-control'] = response_header_string.split('\r\n')[
+                    3].split(':')[1].lstrip()
 
             # SEND RESPONSE TO CLIENT
 

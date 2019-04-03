@@ -21,23 +21,27 @@ class HTTPCacheRequestHandler(SimpleHTTPRequestHandler):
                 self.wfile.write("File not found\n\n")
 
             if self.headers.get('If-Modified-Since', None):
+                print("Entered if modified")
                 if os.path.isfile(filename):
-                    a = time.ctime(os.path.getmtime(filename))
-                    b = self.headers.get('If-Modified-Since', None)
-
+                    a = time.gmtime(time.mktime(time.strptime(time.ctime(os.path.getmtime(filename)), "%a %b %d %H:%M:%S %Y")))
+                    b = time.strptime(self.headers.get('If-Modified-Since', None), "%a, %d %b %Y %H:%M:%S GMT")
                 if a > b:
                     self.send_response(530)
                     self.send_header('Cache-control', 'must-revalidate')
                     self.end_headers()
-                    self.wfile.write(f.read())
-                    f.close()
+                    self.wfile.write(str.encode(f.read()))
+                else:
+                    self.send_response(304)
+                    self.end_headers()
+            else:
+                # THE BELOW CODE WRITES THE RESPONSE AND FILE CONTENTS ALL TOGETHER IN A SINGLE BUFFER
+                self.send_response(200)
+                # self.send_header('Cache-control', 'no-cache')
+                self.send_header('Cache-control', 'must-revalidate')
+                self.end_headers()
+                self.wfile.write(str.encode(f.read()))
 
-                return
-
-            # THE BELOW CODE WRITES THE RESPONSE AND FILE CONTENTS ALL TOGETHER IN A SINGLE BUFFER
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(str.encode(f.read()))
+            f.close()
 
         return
 
@@ -53,19 +57,6 @@ class HTTPCacheRequestHandler(SimpleHTTPRequestHandler):
     #     if f:
     #         self.wfile.write(f.read())
     #         f.close()
-
-    # def do_HEAD(self):
-    #
-    #     filename = self.path.strip("/")
-    #     print("@@@@@@@@@@@@@@@@@@ ", filename)
-    #     if filename == "sample.txt":
-    #         self.send_header('Cache-control', 'no-cache')
-    #     else:
-    #         self.send_header('Cache-control', 'must-revalidate')
-    #
-    #     self.end_headers()
-    #
-    #     return SimpleHTTPRequestHandler.do_HEAD(self)
 
 socketserver.TCPServer.allow_reuse_address = True
 s = socketserver.ThreadingTCPServer(("", PORT), HTTPCacheRequestHandler)
