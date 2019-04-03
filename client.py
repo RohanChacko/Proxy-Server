@@ -25,5 +25,4 @@ if b'407' in lines[0]:
     auth_string = base64.b64encode(str.encode(username + ':' + passwd))
     sock.send(b"GET " + resource.encode() + b" HTTP/1.1\r\nHost: " + host.encode() + b"\r\nAuthorization: Basic " + auth_string + b"\r\n\r\n")
     response = sock.recv(4096)
-print(response)
-
+print(response.decode())
