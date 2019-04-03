@@ -1,5 +1,5 @@
 import socket
-from time import gmtime, strftime
+from time import gmtime, strftime, time
 import sys
 import threading
 import signal
@@ -13,12 +13,11 @@ import threading
 import logging
 import urllib
 import binascii
-from http.server import BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler
 from http.client import HTTPResponse
 from io import StringIO
 import re
 import base64
-
 
 class StringToHTTPResponse():
     def __init__(self, response_str):
@@ -36,9 +35,11 @@ class ProxyServer:
         self.server_socket.bind(('', 20100))
         self.server_socket.listen(10)
 
+        self.accesses = {}
         self.cache_file_dict = {}
         self.cache_header_dict = {}
         self.cache_filename = []
+        self.passwd = {'admin': 'password'}
 
         with open('blacklist.txt', 'r') as f:
             self.blacklist = f.readlines()
@@ -54,6 +55,14 @@ class ProxyServer:
 
     def proxy_thread(self, conn, addr):
         request_text = conn.recv(1024)
+        if not 20000 <= addr[1] < 20100:
+            print("INVALID PORT")
+            conn.send(b"HTTP/1.1 403 Forbidden\n\n")
+            conn.close()
+            return
+        
+        first_line = request_text.split(b'\r\n')[0]
+        resource = first_line.split(b' ')[1]
         headers_list = [i.decode() for i in request_text.split(
             b'\r\n') if re.match('[a-zA-Z]+: ', i.decode())]
         print(headers_list)
@@ -62,17 +71,48 @@ class ProxyServer:
         filename = [i.decode() for i in request_text.split(b'\r\n')
                     ][0].split('?')[0].split('/')[-1]
 
+        url = headers['Host'] + resource.decode()
+        if url in self.accesses:
+            self.accesses[url].append(time())
+        else:
+            self.accesses[url] = [time()]
+        
+        to_cache = False
+        curr_time = time()
+        if len(self.accesses[url]) > 3:
+            for t in self.accesses[url]:
+                count = 0
+                if t > curr_time - 300:
+                    count += 1
+                to_cache = (count > 3)
+
+        auth_obtained = True
         for b in self.blacklist:
             if headers['Host'] in b:
-                print("ERROR: BLACKLISTED SITE")
-                ####################### CLOSE CONNECTION #######################
+                auth_obtained = False
+                if 'Authorization' in headers:
+                    auth_type, pass_string = headers['Authorization'].split()
+                    for user in self.passwd:
+                        print(base64.b64encode(str.encode(user+':'+self.passwd[user])))
+                        if base64.b64encode(str.encode(user+':'+self.passwd[user])) == str.encode(pass_string):
+                            auth_obtained = True
+                            print("USER AUTHENTICATED")
+                    if not auth_obtained:
+                        conn.send(str.encode("HTTP/1.1 403 Forbidden\n\n"))
+                        conn.close()
+                        print("AUTHENTICATION FAILED")
+                        return
+                elif not auth_obtained:
+                    print("ERROR: BLACKLISTED SITE")
+                    ####################### CLOSE CONNECTION #######################
+                    conn.send(str.encode("HTTP/1.1 407 Proxy Authentication Required\nProxy-Authenticate: Basic realm=\"Access blacklisted site\"\n\n"))
+                    conn.close()
             else:
                 pass
 
         if filename in self.cache_header_dict:
-            print("##### USING CACHE #####")
-            # print(self.cache_header_dict[filename])
-            # print(self.cache_file_dict[filename])
+            print("####################### USING CACHE #######################")
+            
 
             if 'must-revalidate' in self.cache_header_dict[filename]['Cache-control']:
 
@@ -116,7 +156,7 @@ class ProxyServer:
                         3].split(':')[1].lstrip()
 
                 elif '304' in response_header_string:
-                    print("CACHE CAN BE USED. NO MODIFICATION AFTER REVALIDATION")
+                    print("CACHE CAN BE USED. NO MODIFICATION AFTER REVALIDATION.")
 
             else:
                 print("USE CACHE. NO REVALIDATION")
@@ -149,7 +189,7 @@ class ProxyServer:
 
             print("RESPONSE => ", response_file_string)
 
-            if '200' in response_header_string:
+            if '200' in response_header_string and to_cache:
 
                 if(len(self.cache_filename) > 3):
 
@@ -171,9 +211,16 @@ class ProxyServer:
                     2].split(':', 1)[1].lstrip()
                 self.cache_header_dict[filename]['Cache-control'] = response_header_string.split('\r\n')[
                     3].split(':')[1].lstrip()
+                
+            if not to_cache:
+                conn.send(b"HTTP/1.1 200 OK\n\n" + response_file_string.encode())
+                conn.close()
+                return 
 
-            # SEND RESPONSE TO CLIENT
 
+        # SEND RESPONSE TO CLIENT
+        conn.send(b"HTTP/1.1 200 OK\n\n" + base64.b64decode(self.cache_file_dict[filename]))
+        conn.close()
 
 if __name__ == '__main__':
     proxy = ProxyServer()

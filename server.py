@@ -3,7 +3,8 @@ import time
 import socketserver
 from http.server import SimpleHTTPRequestHandler
 
-PORT = 20105
+port_no = int(input("Enter port number to serve on: "))
+PORT = port_no
 
 class HTTPCacheRequestHandler(SimpleHTTPRequestHandler):
 
