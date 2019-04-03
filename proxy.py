@@ -18,6 +18,7 @@ from http.client import HTTPResponse
 from io import StringIO
 import re
 import base64
+import ipaddress
 
 class StringToHTTPResponse():
     def __init__(self, response_str):
@@ -42,7 +43,15 @@ class ProxyServer:
         self.passwd = {'admin': 'password'}
 
         with open('blacklist.txt', 'r') as f:
-            self.blacklist = f.readlines()
+            self.blacklist = []
+            for index, addr in enumerate(f.readlines()):
+
+                str_1 = addr.split(':')[0]
+                str_2 = addr.split(':')[1].rstrip('\n')
+                net = ipaddress.ip_network(str_1)
+
+                for x in net.hosts():
+                    self.blacklist.append(str(x)+':'+str_2)
 
     def listenForClient(self):
         while True:
@@ -60,13 +69,15 @@ class ProxyServer:
             conn.send(b"HTTP/1.1 403 Forbidden\n\n")
             conn.close()
             return
-        
+
         first_line = request_text.split(b'\r\n')[0]
+
         resource = first_line.split(b' ')[1]
         headers_list = [i.decode() for i in request_text.split(
             b'\r\n') if re.match('[a-zA-Z]+: ', i.decode())]
         print(headers_list)
         headers = {h.split(': ')[0]: h.split(': ')[1] for h in headers_list}
+        headers['Method'] = request_text.decode().split(' ')[0]
         print(headers)
         filename = [i.decode() for i in request_text.split(b'\r\n')
                     ][0].split('?')[0].split('/')[-1]
@@ -76,7 +87,7 @@ class ProxyServer:
             self.accesses[url].append(time())
         else:
             self.accesses[url] = [time()]
-        
+
         to_cache = False
         curr_time = time()
         if len(self.accesses[url]) > 3:
@@ -93,8 +104,9 @@ class ProxyServer:
                 if 'Authorization' in headers:
                     auth_type, pass_string = headers['Authorization'].split()
                     for user in self.passwd:
-                        print(base64.b64encode(str.encode(user+':'+self.passwd[user])))
-                        if base64.b64encode(str.encode(user+':'+self.passwd[user])) == str.encode(pass_string):
+                        print(base64.b64encode(str.encode(
+                            user + ':' + self.passwd[user])))
+                        if base64.b64encode(str.encode(user + ':' + self.passwd[user])) == str.encode(pass_string):
                             auth_obtained = True
                             print("USER AUTHENTICATED")
                     if not auth_obtained:
@@ -105,14 +117,15 @@ class ProxyServer:
                 elif not auth_obtained:
                     print("ERROR: BLACKLISTED SITE")
                     ####################### CLOSE CONNECTION #######################
-                    conn.send(str.encode("HTTP/1.1 407 Proxy Authentication Required\nProxy-Authenticate: Basic realm=\"Access blacklisted site\"\n\n"))
+                    conn.send(str.encode(
+                        "HTTP/1.1 407 Proxy Authentication Required\nProxy-Authenticate: Basic realm=\"Access blacklisted site\"\n\n"))
                     conn.close()
+                    return
             else:
                 pass
 
         if filename in self.cache_header_dict:
             print("####################### USING CACHE #######################")
-            
 
             if 'must-revalidate' in self.cache_header_dict[filename]['Cache-control']:
 
@@ -211,16 +224,18 @@ class ProxyServer:
                     2].split(':', 1)[1].lstrip()
                 self.cache_header_dict[filename]['Cache-control'] = response_header_string.split('\r\n')[
                     3].split(':')[1].lstrip()
-                
-            if not to_cache:
-                conn.send(b"HTTP/1.1 200 OK\n\n" + response_file_string.encode())
-                conn.close()
-                return 
 
+            if not to_cache:
+                conn.send(b"HTTP/1.1 200 OK\n\n" +
+                          response_file_string.encode())
+                conn.close()
+                return
 
         # SEND RESPONSE TO CLIENT
-        conn.send(b"HTTP/1.1 200 OK\n\n" + base64.b64decode(self.cache_file_dict[filename]))
+        conn.send(b"HTTP/1.1 200 OK\n\n" +
+                  base64.b64decode(self.cache_file_dict[filename]))
         conn.close()
+
 
 if __name__ == '__main__':
     proxy = ProxyServer()

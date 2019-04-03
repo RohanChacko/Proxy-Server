@@ -17,6 +17,7 @@ class HTTPCacheRequestHandler(SimpleHTTPRequestHandler):
             try:
                 f = open(filename, 'r')
             except:
+
                 self.send_error(404)
                 self.end_headers()
                 self.wfile.write("File not found\n\n")
@@ -46,18 +47,21 @@ class HTTPCacheRequestHandler(SimpleHTTPRequestHandler):
 
         return
 
-    # def do_POST(self):
-    #     filename = self.path.strip("/")
-    #     print("fuck me ", filename)
-    #     try:
-    #         f = open(filename, 'r')
-    #     except IOError:
-    #         self.send_error(404, "File not found")
-    #         return None
-    #
-    #     if f:
-    #         self.wfile.write(f.read())
-    #         f.close()
+    def do_POST(self):
+        filename = self.path.split('/')[-1].split('/')[-1]
+        try:
+            f = open(filename,'r')
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(str.encode(f.read()))
+            f.close()
+
+        except:
+            self.send_error(404)
+            self.end_headers()
+            self.wfile.write("File not found\n\n")
+
+        return
 
 socketserver.TCPServer.allow_reuse_address = True
 s = socketserver.ThreadingTCPServer(("", PORT), HTTPCacheRequestHandler)
